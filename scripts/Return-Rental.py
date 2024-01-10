@@ -284,8 +284,9 @@ def search_interactions(interactions, serial_number):
 
         time.sleep(1)
         
-        # Can't find the hardwares
-        all_hardware = driver.find_elements(By.XPATH, "//table[@class='gridTable']/tbody/tr/td/span[@class='expandRowDetails']")
+        # //*[@id="$PpyWorkPage$pReturnDeviceDetails$l1"]/td[1]/span
+        # //table[@class='gridTable']/tbody/tr/td/span[@class='expandRowDetails']
+        all_hardware = driver.find_elements(By.XPATH, "//table/tbody/tr/td/span[@class='expandRowDetails']")
         print(len(all_hardware))
 
         for hardware in all_hardware:
