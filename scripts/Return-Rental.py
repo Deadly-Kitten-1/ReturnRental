@@ -63,25 +63,35 @@ def start_task(ERROR_COUNTER):
         return start_task(ERROR_COUNTER)
 
 def read_excel_file(dir):
-    df_cust_numbers = pd.read_excel(dir)
+    df = pd.read_excel(dir)
 
-    #Select only the necessary columns
-    df_cust_numbers = df_cust_numbers[['Klant','Klant nummer', 'Store']]
+    # Select only the necessary columns
+    df = df[['Klant','Klant nummer', 'Store', 'Serienummer']]
 
-    #Remove NaN values
-    df_cust_numbers = df_cust_numbers.dropna()
+    # Remove NaN values
+    df = df.dropna()
 
-    #Only keep the numeric values in de dataframe
-    df_cust_numbers = df_cust_numbers.astype({'Klant nummer':'string'})
-    df_cust_numbers['Klant nummer'] = df_cust_numbers['Klant nummer'].str.extract('(\d+)')
+    # Only keep the numeric values in de dataframe
+    df = df.astype({'Klant nummer':'string'})
+    df['Klant nummer'] = df['Klant nummer'].str.extract('(\d+)')
 
-    #Remove duplicate klant nummers
-    df_cust_numbers = df_cust_numbers.drop_duplicates(subset=['Klant nummer'])
+    # Remove duplicate klant nummers
+    df = df.drop_duplicates(subset=['Serienummer'])
 
-    #Reset the index
-    df_cust_numbers = df_cust_numbers.reset_index(drop=True)
+    # Reset the index
+    df = df.reset_index(drop=True)
 
-    return df_cust_numbers
+    # Make the DataFrame smaller by combining the serial numbers together in an array
+    df_working_data = pd.DataFrame(columns=['Customer Number', 'Serial Numbers', 'Store'])
+    for index, row in df.iterrows():
+        cust_number = row['Klant nummer']
+        serial_numbers = df['Serienummer'].loc[df['Klant nummer'] == cust_number].tolist()
+        df_working_data.loc[len(df_working_data)] = [cust_number, serial_numbers, row['Store']]
+
+    # Remove duplicate customer numbers
+    df_working_data = df_working_data.drop_duplicates(subset=['Customer Number'])
+
+    return df_working_data
 
 def make_shop_files(dir):
     df_big = pd.read_excel(dir)
@@ -128,6 +138,17 @@ def make_shop_files(dir):
         else:
             save_output(df, "MobileApp_Eeklo", False)
 
+def search_customers(df, ERROR_COUNTER):
+    # Make DataFrames
+    df_working_data = pd.DataFrame(columns=['Customer Number', 'Delivery Order', 'Serial Numbers'])
+    df_succes = pd.DataFrame(columns=df.columns)
+    df_failed = pd.DataFrame(columns=df.columns)
+
+    for index, row in df.iterrows():
+        print(f"Going to work on cust num: {row['Customer Number']} with serial numbers: {row['Serial Numbers']}")
+        df_succes, df_failed = search_customer(row['Customer Number'], ERROR_COUNTER, row['Serial Numbers'] ,df_working_data, df_succes, df_failed)
+    return (df_succes, df_failed)
+
 def search_customer(cust_number, ERROR_COUNTER, serial_numbers, df, df_succes, df_failed):
 
     try:
@@ -152,9 +173,11 @@ def search_customer(cust_number, ERROR_COUNTER, serial_numbers, df, df_succes, d
 
         interactions = get_tasks()
 
-        search_interactions(cust_number, interactions, serial_numbers, df, df_succes, df_failed)
+        df_succes, df_failed = search_interactions(cust_number, interactions, serial_numbers, df, df_succes, df_failed)
 
         ERROR_COUNTER = 0
+
+        return (df_succes, df_failed)
     except Exception as inst:
         ERROR_COUNTER += 1
         print(inst)
@@ -170,7 +193,8 @@ def get_tasks():
 
     # Click on the Tasks button
     btn_tasks = None
-    btns = driver.find_elements(By.TAG_NAME, 'h3')
+    #btns = driver.find_elements(By.TAG_NAME, 'h3')
+    btns = WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'h3')))
 
     for btn in btns:
         if btn.get_attribute('class') == "layout-group-item-title" and btn.text.strip() == "Tasks":
@@ -183,12 +207,13 @@ def get_tasks():
 
     # Filter on request
     btn_request = None
-    btns = driver.find_elements(By.XPATH, "//tbody/tr/th/div[@class='oflowDiv']")
+    #btns = driver.find_elements(By.XPATH, "//tbody/tr/th/div[@class='oflowDiv']")
+    btns = WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.XPATH, "//tbody/tr/th/div[@class='oflowDiv']")))
 
     for btn in btns:
         try:
             WebDriverWait(btn, 0.05).until(EC.presence_of_element_located((By.XPATH, ".//*[contains(text(),'Request')]")))
-            btn_request = WebDriverWait(btn, 0.05).until(EC.presence_of_element_located((By.XPATH, ".//a[@id='pui_filter']")))
+            btn_request = WebDriverWait(btn, 0.05).until(EC.element_to_be_clickable((By.XPATH, ".//a[@id='pui_filter']")))
             btn_request.click()
             break
         except Exception as _:
@@ -198,7 +223,7 @@ def get_tasks():
 
     # Enter the filter for Return Hardware
     input_request = None
-    inputs = driver.find_elements(By.TAG_NAME, 'input')
+    inputs = WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'input')))
 
     for input in inputs:
         if '$PpyFilterCriteria_D_TaskTabDetails' in input.get_attribute('name') and input.get_attribute('class') == 'leftJustifyStyle':
@@ -207,7 +232,7 @@ def get_tasks():
     
     input_request.send_keys('Return Hardware')
 
-    btn_request_apply = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH, "//li/div/button[text()='Apply']")))
+    btn_request_apply = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//li/div/button[text()='Apply']")))
     btn_request_apply.click()
 
     time.sleep(1.5)
@@ -219,7 +244,7 @@ def get_tasks():
     for btn in btns:
         try:
             WebDriverWait(btn, 0.05).until(EC.presence_of_element_located((By.XPATH, ".//*[contains(text(),'Status')]")))
-            btn_status = WebDriverWait(btn, 0.05).until(EC.presence_of_element_located((By.XPATH, ".//a[@id='pui_filter']")))
+            btn_status = WebDriverWait(btn, 0.05).until(EC.element_to_be_clickable((By.XPATH, ".//a[@id='pui_filter']")))
             btn_status.click()
             break
         except Exception as _:
@@ -233,15 +258,17 @@ def get_tasks():
         chk.click()
         time.sleep(0.5)
     
-    btn_status_apply = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH, "//li/div/button[text()='Apply']")))
+    btn_status_apply = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//li/div/button[text()='Apply']")))
     btn_status_apply.click()
+
+    time.sleep(1)
 
     table = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH, "//table[@pl_prop_class='Telenet-ADT-Work']")))
 
     # Get all interaction ID's from the table
     interaction_ids = []
 
-    ids = table.find_elements(By.XPATH, ".//a[contains(text(),'S-')]")
+    ids = table.find_elements(By.XPATH, ".//a[contains(text(),'S-') and contains(@name,'TaskTabDetails')]")
 
     for id in ids:
         interaction_ids.append(id.text.strip())
@@ -251,7 +278,7 @@ def get_tasks():
 
     while search_pages:
         try:
-            btn_next_page = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH, "//div/div/div/a[@title='Next Page']")))
+            btn_next_page = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//div/div/div/a[@title='Next Page']")))
             btn_next_page.click()
             
             time.sleep(1)
@@ -272,28 +299,26 @@ def get_tasks():
 def search_interactions(cust_number, interactions, serial_numbers, df, df_succes, df_failed):
     for interaction in interactions:
         driver.switch_to.default_content()
-        input_interaction = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.NAME, '$PpyDisplayHarness$ppySearchText')))
+        input_interaction = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.NAME, '$PpyDisplayHarness$ppySearchText')))
 
         input_interaction.clear()
         input_interaction.send_keys(interaction)
         input_interaction.send_keys(Keys.ENTER)
 
-        time.sleep(1.5)
-
-        frames = driver.find_elements(By.TAG_NAME, "iframe")
-        driver.switch_to.frame(frames[-1])
-
         time.sleep(3)
 
-        table = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH, "//*[@pl_prop_class='Telenet-FW-ADTFW-Work-OrderMgmt-ReturnDevice']")))
+        frames = WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'iframe')))
+        driver.switch_to.frame(frames[-1])
 
-        all_hardware = table.find_elements(By.XPATH, ".//*[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")
+        table = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.XPATH, "//*[contains(@pl_prop_class,'Telenet-FW-ADTFW-Work-OrderMgmt-ReturnDevice')]")))
+
+        all_hardware = WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.XPATH, ".//*[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
+        to_change = 0
 
         # Iterate through all the delivery orders
         for hardware in all_hardware:
-            order = WebDriverWait(hardware, 5).until(EC.presence_of_element_located((By.XPATH, ".//td[@data-attribute-name='Delivery Order']/div/span"))).text
-
-            expand = WebDriverWait(hardware, 5).until(EC.presence_of_element_located((By.XPATH, ".//*[@class='expandRowDetails']")))
+            order = WebDriverWait(hardware, 15).until(EC.presence_of_element_located((By.XPATH, ".//td[@data-attribute-name='Delivery Order']/div/span"))).text
+            expand = WebDriverWait(hardware, 15).until(EC.presence_of_element_located((By.XPATH, ".//*[@class='expandRowDetails']")))
             expand.click()
 
             time.sleep(2)
@@ -302,6 +327,7 @@ def search_interactions(cust_number, interactions, serial_numbers, df, df_succes
                 try:
                     device_indetifier = WebDriverWait(table, 5).until(EC.presence_of_element_located((By.XPATH, f".//div[@id='rowDetail{hardware.get_attribute('id')}']")))
                     WebDriverWait(device_indetifier, 2).until(EC.presence_of_element_located((By.XPATH, f"//span[text()='{serial_number}']")))
+                    to_change += 1
                     
                     df.loc[len(df)] = [cust_number, order, serial_number]
                     del serial_numbers[index]
@@ -310,61 +336,114 @@ def search_interactions(cust_number, interactions, serial_numbers, df, df_succes
             
             if len(serial_numbers) == 0:
                 break
+
+        if to_change == 0:
+            driver.switch_to.default_content()
+            selected_tab = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.XPATH, "//li[@aria-selected='true']")))
             
-        print(df)
+            close_btn = WebDriverWait(selected_tab, 5).until(EC.presence_of_element_located((By.XPATH, ".//span[@aria-label='Close Tab' and @id='close']")))
+            close_btn.click()
+
+            time.sleep(3)
+
+            frames = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'iframe')))
+            driver.switch_to.frame(frames[-1])
+            continue
 
         # Try to edit the interaction
-        btn_edit = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//span/a[contains(@name,'ServiceCaseHeader_pyWorkPage') and text()='Edit']")))
+        btn_edit = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//span/a[contains(@name,'ServiceCaseHeader_pyWorkPage') and text()='Edit']")))
         btn_edit.click()
 
         time.sleep(1.5)
-        
-        btn_confirm = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, "//button[contains(@name,'ConfirmEditSC_pyWorkPage') and text()='Yes']")))
+        btn_confirm = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@name,'ConfirmEditSC_pyWorkPage') and text()='Yes']")))
         btn_confirm.click()
-
-        time.sleep(1.5)
         
-        alert = Alert(driver)
+        WebDriverWait(driver, 10).until(EC.alert_is_present())
+        alert = driver.switch_to.alert
 
         # If the interaction gives an empty assignment key error then add it to the failed list
         if 'empty assignment key' in alert.text.lower():
-            for serial_number in serial_numbers:
-                row = df.loc[df['Serial Number'] == serial_number]
-                df_failed.loc[len(df_failed)] = [cust_number, row['Delivery Order'], serial_number]
-
-        alert.accept()
+            rows = df.loc[df['Customer Number'] == cust_number]
+            for index, row in rows.iterrows():
+                df_failed.loc[len(df_failed)] = row
+            alert.accept()
+            continue
         
-        time.sleep(1.5)
+        alert.accept()
+        driver.switch_to.default_content()
 
-        frames = driver.find_elements(By.TAG_NAME, "iframe")
+        time.sleep(3)
+
+        frames = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'iframe')))
         driver.switch_to.frame(frames[-1])
 
         actions = ActionChains(driver)
 
         # Use the dataframe to get the order id and fill in the serial number
         table = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.XPATH, "//*[contains(@pl_prop_class,'Telenet-FW-ADTFW-Work-OrderMgmt-ReturnDevice')]")))
-        print(table)
 
-        all_delivery_orders = table.find_elements(By.XPATH, ".//tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")
-        print(len(all_delivery_orders))
+        all_delivery_orders = WebDriverWait(table, 30).until(EC.presence_of_all_elements_located((By.XPATH, ".//tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
+        #all_delivery_orders = table.find_elements(By.XPATH, ".//tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")
 
         # Check for each row the delivery order to be the same as the order in the all_delivery_orders
         for index, row in df.iterrows():
-            print(row)
             for delivery_order in all_delivery_orders:
                 try:
-                    WebDriverWait(delivery_order, 2).until(EC.presence_of_element_located((By.XPATH, f"//span[text()='{row['Delivery Order']}']")))
-                    input_serial_number = WebDriverWait(delivery_order, 5).until(EC.presence_of_element_located((By.XPATH, f".//input[@name='{delivery_order.get_attribute('id')}$pAgentEnteredReturnDeviceSerialNumber']")))
-                    input_serial_number.send_keys(row['Serial Number'])
-                                        
+                    print(f"Working on delivery order: {row['Delivery Order']}")
+                    
+                    id = delivery_order.get_attribute('id')
+
+                    WebDriverWait(delivery_order, 0.5).until(EC.presence_of_element_located((By.XPATH, f"//span[text()='{row['Delivery Order']}']")))
+                    input_serial_number = WebDriverWait(delivery_order, 0.5).until(EC.presence_of_element_located((By.XPATH, f".//input[@name='{delivery_order.get_attribute('id')}$pAgentEnteredReturnDeviceSerialNumber']")))
+                    input_serial_number.send_keys(row['Serial Numbers'])
+                    input_serial_number.send_keys(Keys.ENTER)
+                    
+                    time.sleep(2)
+
+                    send_serial_number = WebDriverWait(driver, 0.5).until(EC.presence_of_element_located((By.XPATH, f"//tr[@id='{id}']//i/..")))
+                    send_serial_number.click()
+
+                    parent = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//div[@data-node-id='SubmitReturnDelivery' and @node_name='SubmitReturnDelivery']")))
+                    proceed_btn = WebDriverWait(parent, 10).until(EC.element_to_be_clickable((By.XPATH, ".//button[text()='Proceed']")))
+                    proceed_btn.click()
+
                     df_succes.loc[len(df_succes)] = row
 
-                except Exception as _:
-                    pass
+                    time.sleep(10)
 
-        print(df_succes)
-        print(df_failed)
-        exit(0)
+                except Exception as exception:
+                    print(exception)
+        
+        if len(serial_numbers) == 0:
+            break
+    
+    wrap_up()
+
+    # If there are leftover serial numbers then put them in the failed DataFrame
+    for serial_number in serial_numbers:
+        df_failed.loc[len(df)] = [str(cust_number), None, str(serial_number)]
+
+    return (df_succes, df_failed)
+
+def wrap_up():
+    # Wrap up the task
+    driver.switch_to.default_content
+
+    time.sleep(1)
+
+    frames = WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'iframe')))
+    driver.switch_to.frame(frames[-1])
+
+    btn_wrapup = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@name,'CPMInteractionDriver') and contains(text(),'rap Up')]")))
+    btn_wrapup.click()
+
+    # Search for the go to wrap up button
+    btn_goto = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Go to Wrap Up') and contains(@name,'ConfirmWrapup')]")))
+    btn_goto.click()
+
+    # Click on the submit button
+    btn_submit = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.XPATH, "//div[contains(text(),'Submit') and contains(@class,'pzbtn')]")))
+    btn_submit.click()
 
 def save_output(df, basename, error):
 
@@ -548,11 +627,19 @@ def main():
 
 def main_console():
     ERROR_COUNTER = 0
-    # Make DataFrames
-    df = pd.DataFrame(columns=['Customer Number', 'Delivery Order', 'Serial Number'])
-    df_succes = pd.DataFrame(columns=df.columns)
-    df_failed = pd.DataFrame(columns=df.columns)
-    search_customer(587303977, ERROR_COUNTER, [982243685066], df, df_succes, df_failed)
+    
+
+    df = read_excel_file(r'C:\Users\Kassa\Documents\Scripts\ReturnRental\excel\TestReturnRental_Case1.xlsx')
+
+    print(df)
+
+    df_succes, df_failed = search_customers(df, ERROR_COUNTER)
+    
+    # Empty assignment key error:
+    #search_customer(32760435, ERROR_COUNTER, [972352214451, 964385572542], df, df_succes, df_failed)
+
+    save_output(df_succes, 'Return_Rental_Succes', False)
+    save_output(df_failed, 'Return_Rental_Error', True)
 
 
 if __name__ == '__main__':
