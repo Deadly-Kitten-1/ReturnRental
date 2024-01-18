@@ -201,6 +201,7 @@ def search_customer(row, ERROR_COUNTER, df, df_succes, df_failed):
             
             time.sleep(5)
             try:
+                print("Close tab after exception")
                 close_current_tab()
             except TimeoutException as _:
                 pass
@@ -221,23 +222,6 @@ def close_current_tab():
     driver.switch_to.frame(frames[-1])
 
     time.sleep(1.5)
-
-    try:
-        WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH, "//div[contains(@id,'modaldialog')]/span[contains(text(),'Confirm close')]")))
-        WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH,"//button[contains(@name,'CheckConfirm') and contains(text(),'Discard')]"))).click()            
-        
-        time.sleep(5)
-        
-        driver.switch_to.default_content()
-        selected_tab = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//li[@aria-selected='true']")))
-        
-        close_btn = WebDriverWait(selected_tab, 5).until(EC.presence_of_element_located((By.XPATH, ".//span[@aria-label='Close Tab' and @id='close']")))
-        close_btn.click()
-
-        frames = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'iframe')))
-        driver.switch_to.frame(frames[-1])
-    except TimeoutException as _:
-        pass              
   
 def get_tasks():
 
@@ -398,6 +382,7 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                 break
 
         if to_change == 0:
+            print("Nothing found to change so close the tab")
             close_current_tab()
             continue
 
@@ -442,6 +427,7 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
             all_delivery_orders = WebDriverWait(table, 60).until(EC.presence_of_all_elements_located((By.XPATH, ".//tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
 
             # Check for each row the delivery order to be the same as the order in the all_delivery_orders
+            succes_flag = False
             for index, row in df.iterrows():
                 for delivery_order in all_delivery_orders:
                     try:
@@ -450,12 +436,11 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                         id = delivery_order.get_attribute('id')
 
                         WebDriverWait(delivery_order, 0.5).until(EC.presence_of_element_located((By.XPATH, f"//span[text()='{row['Delivery Order']}']")))
-                    
+                        input_serial_number = WebDriverWait(delivery_order, 0.5).until(EC.presence_of_element_located((By.XPATH, f".//input[@name='{delivery_order.get_attribute('id')}$pAgentEnteredReturnDeviceSerialNumber']")))
+                        input_serial_number.send_keys(row['Serial Number'])
+                        input_serial_number.send_keys(Keys.ENTER)
+                        
                         try:
-                            input_serial_number = WebDriverWait(delivery_order, 0.5).until(EC.presence_of_element_located((By.XPATH, f".//input[@name='{delivery_order.get_attribute('id')}$pAgentEnteredReturnDeviceSerialNumber']")))
-                            input_serial_number.send_keys(row['Serial Number'])
-                            input_serial_number.send_keys(Keys.ENTER)
-
                             time.sleep(10)
 
                             send_serial_number = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, f"//tr[@id='{id}']//i/..")))
@@ -470,9 +455,11 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                             time.sleep(10)
 
                             df_succes.loc[len(df_succes)] = row.drop('Delivery Order')
+                            succes_flag = True
                             print("Added a new line to the succes table")
 
                             time.sleep(10)
+                            break
 
                         except Exception as inst:
                             print("An exception occured while inputting the serial number: ", inst, "Type of exception: ", type(inst).__name__)
@@ -484,6 +471,9 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                             break
                     except TimeoutException as inst:
                         print("An exception occured while searching for the serial number: ", inst, "Type of exception: ", type(inst).__name__)
+                if succes_flag:
+                    break
+            print("Closing tab after either a fail or succes in the editing of the interaction")
             close_current_tab()
 
             if len(serial_numbers) == 0:
@@ -496,10 +486,12 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
 
             for index, row in rows.iterrows():
                 df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['White screen fail'], index=['Reason'])])
+            print("Close tab after not interactable exception")
             close_current_tab()
             continue
         except  TimeoutException as _:
             print("Timed out while waiting for the element to appear on screen")
+            print("Close tab after a timeoutexception")
             close_current_tab()
             continue
     
