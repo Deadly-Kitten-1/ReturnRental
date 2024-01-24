@@ -21,9 +21,11 @@ import time
 import os
 
 #Constants
+#with open(r'config.json') as config_file:
 with open(r'C:\Users\Kassa\Documents\Scripts\ReturnRental\scripts\config.json') as config_file:
     CONFIG = json.load(config_file)
 
+#WEBDRIVER_LOCATION = r'chromedriver.exe'
 WEBDRIVER_LOCATION = r'C:\Users\Kassa\Documents\Scripts\ReturnRental\scripts\chromedriver.exe'
 DEBUG_PORT = CONFIG['chrome_port']
 ERROR_COUNTER = 0
