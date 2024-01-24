@@ -52,13 +52,12 @@ def start_task(ERROR_COUNTER):
 
         ul_retail = WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.XPATH, f"//ul[@id='{id}']")))
         txt_retail = WebDriverWait(ul_retail, 10).until(EC.presence_of_element_located((By.XPATH, ".//span[text()='Retail']")))
-        id = WebDriverWait(txt_retail, 10).until(EC.presence_of_element_located((By.XPATH, f"./ancestor::li[contains(@id,'{id}')]"))).get_attribute('data-childnodesid')
 
         actions.move_to_element(txt_retail).perform()
 
         time.sleep(3)
 
-        btn_retailtelenet = WebDriverWait(driver, 30).until(EC.element_to_be_clickable((By.XPATH, f'//*[@id="{id}"]/li[2]/a')))
+        btn_retailtelenet = WebDriverWait(txt_retail, 10).until(EC.element_to_be_clickable((By.XPATH, f"./ancestor::li[contains(@id,'{id}')]//span[contains(text(),'Telenet')]")))
         btn_retailtelenet.click()
         
     except Exception as e:
@@ -152,18 +151,22 @@ def search_customers(df, ERROR_COUNTER):
     df_failed = pd.DataFrame(columns=df_succes.columns.append(pd.Index(['Reason'])))
 
     for index, row in df.iterrows():
-        driver.refresh()
-        
-        time.sleep(5)
-
         start_task(ERROR_COUNTER)
         print(f"Going to work on cust num: {row['Customer Number']} with serial numbers: {row['Serial Numbers']}")
-        df_succes, df_failed = search_customer(row, ERROR_COUNTER, df_working_data, df_succes, df_failed)
+        df_succes, df_failed = search_customer(row, ERROR_COUNTER, df_working_data, df_succes, df_failed, True)
     
     return (df_succes, df_failed)
 
-def search_customer(row, ERROR_COUNTER, df, df_succes, df_failed):
+def search_customer(row, ERROR_COUNTER, df, df_succes, df_failed, starttask):
     try:
+        if starttask:
+            driver.refresh()
+        
+            time.sleep(5)
+            ERROR_COUNTER = 0
+
+            start_task(ERROR_COUNTER)
+
         cust = row['Customer']
         cust_number = row['Customer Number']
         serial_numbers = row['Serial Numbers']
@@ -175,8 +178,11 @@ def search_customer(row, ERROR_COUNTER, df, df_succes, df_failed):
         frames = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'iframe')))
         driver.switch_to.frame(frames[-1])
 
-        # Look for txtField, 2 checkboxes and the search button
-        txt_cust = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "$PpyWorkPage$pIntelligentSearchString")))
+        # Look for txtField and 1 checkbox
+        chk_inactive = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.XPATH, "//label[contains(text(),'Include inactive customers')]")))
+        chk_inactive.click()
+
+        txt_cust = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.NAME, "$PpyWorkPage$pIntelligentSearchString")))
 
         # Give all the input to the elements
         txt_cust.send_keys(cust_number)
@@ -185,7 +191,7 @@ def search_customer(row, ERROR_COUNTER, df, df_succes, df_failed):
         time.sleep(10)
 
         interactions = get_tasks()
-
+        
         df_succes, df_failed = search_interactions(row, interactions, df, df_succes, df_failed)
 
         ERROR_COUNTER = 0
@@ -207,9 +213,13 @@ def search_customer(row, ERROR_COUNTER, df, df_succes, df_failed):
                 pass
             return (df_succes, df_failed)
 
-        return search_customer(row, ERROR_COUNTER, df, df_succes, df_failed)
+        return search_customer(row, ERROR_COUNTER, df, df_succes, df_failed, False)
   
 def close_current_tab():
+    driver.refresh()
+    
+    time.sleep(5)
+
     driver.switch_to.default_content()
     selected_tab = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//li[@aria-selected='true']")))
     
@@ -287,7 +297,10 @@ def get_tasks():
     time.sleep(3)
 
     chks = WebDriverWait(driver, 30).until(EC.presence_of_all_elements_located((By.XPATH, "//tbody/tr/td/label[contains(text(),'Pending-Completion') or contains(text(),'Open')]")))
-
+    
+    if len(chks) == 0:
+        return []
+    
     for chk in chks:
         chk.click()
         time.sleep(0.5)
@@ -349,12 +362,12 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
 
         time.sleep(3)
 
-        frames = WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'iframe')))
+        frames = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'iframe')))
         driver.switch_to.frame(frames[-1])
 
-        table = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.XPATH, "//*[contains(@pl_prop_class,'Telenet-FW-ADTFW-Work-OrderMgmt-ReturnDevice')]")))
+        table = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//*[contains(@pl_prop_class,'Telenet-FW-ADTFW-Work-OrderMgmt-ReturnDevice')]")))
 
-        all_hardware = WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.XPATH, ".//*[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
+        all_hardware = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.XPATH, ".//*[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
         to_change = 0
 
         # Iterate through all the delivery orders
@@ -407,6 +420,7 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
         
         alert.accept()
 
+        # Try to edit the return rental after accepting the alert
         try:
             driver.switch_to.default_content()
 
@@ -473,8 +487,12 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                         print("An exception occured while searching for the serial number: ", inst, "Type of exception: ", type(inst).__name__)
                 if succes_flag:
                     break
-            print("Closing tab after either a fail or succes in the editing of the interaction")
-            close_current_tab()
+            tabs = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.XPATH, "//iframe[contains(@name,'PegaGadget')]")))
+            print(len(tabs))
+            
+            if len(tabs) > 2:
+                print("Closing tab after either a fail or succes in the editing of the interaction")
+                close_current_tab()
 
             if len(serial_numbers) == 0:
                 break
@@ -595,7 +613,7 @@ def main():
         [sg.ProgressBar(max_value=100, orientation='h', size=(65, 15), key='-PBAR-', visible=False)]
     ]
 
-    main_window = sg.Window('Origin Automation', layout_main, icon=r'CCP.ico')
+    main_window = sg.Window('Return Rental', layout_main, icon=r'CCP.ico')
 
     while True:
 
@@ -657,6 +675,7 @@ def main():
                     
                     # Making the list of customers
                     df = read_excel_file(telenet_file)
+
                     save_output(df, 'Return_Rental_Workingfile', False)
                     
                     main_window['-PERCENTAGE-'].update(value='%0.2f procent voltooid.' % (0))
@@ -668,25 +687,47 @@ def main():
                     main_window['-PBAR-'].update(visible=True)
 
                     # Doing the business logic
-                    df_completed = pd.DataFrame(columns=df.columns)
-                    df_error = pd.DataFrame(columns=df.columns)
+                    df_working_data = pd.DataFrame(columns=['Customer','Customer Number', 'Delivery Order', 'Serial Number', 'Interaction', 'Store'])
+                    df_succes = pd.DataFrame(columns=['Customer','Customer Number', 'Serial Number', 'Interaction', 'Store'])
+                    df_failed = pd.DataFrame(columns=df_succes.columns.append(pd.Index(['Reason'])))
                     
                     completed = 0
 
-                    for _, value in df.iterrows():
+                    for _, row in df.iterrows():
                         try:
-                            main_window['-CURRCUS-'].update(value=value['Klant'] + ', met klantnummer: ' + value['Klant nummer'])
+                            main_window['-CURRCUS-'].update(value=row['Customer'] + ', met klantnummer: ' + row['Customer Number'])
+                            
+                            main_window.perform_long_operation(lambda: search_customer(row, ERROR_COUNTER, df_working_data, df_succes, df_failed, True), '-searchcomplete-')
+                            completed += 1
+                            
+                            event, values = main_window.read()
 
-                           
+                            if event in (sg.WIN_CLOSED, 'Exit'):
+                                try:
+                                    save_output(df_succes, "Return_Rental_Succes", False)
+                                    save_output(df_failed, "Return_Rental_Error", True)
+                                except Exception as ex:
+                                    sg.PopupError(f"Error while saving the output to an excel. Exception: {ex}", icon=r'CCP.ico')
+
+                                end = time.time()
+                                output = str(round((end - start) / 60)) + ' minutes and ' + str(round((((end - start) / 60.00) - ((end - start) // 60.0)) * 60, 2)) + " seconds."
+                                sg.popup(f'Exiting program early after {output}\nThe application handled {completed} customers.\nThe program ran {len(df_succes)}/{completed} succesfull.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
+                                main_window.close()
+                                driver.quit()
+                                exit(0)
+                            
+                            if values['-searchcomplete-']:
+                                df_succes, df_failed = values['-searchcomplete-']
 
                             main_window['-PERCENTAGE-'].update(value='%0.2f procent voltooid.' % ((completed / len(df)) * 100))
                             main_window['-PBAR-'].update(current_count=int((completed / len(df)) * 100))
 
                         except Exception as inst:
-                            sg.PopupError(f"Error while doing tasks for the customer: {value['Klant']} with customer number: {value['Klant nummer']}\nError: {inst}", title='Error', icon=r'CCP.ico')
+                            print("An exception occured: ", inst, "Type of exception: ", type(inst).__name__)
+                            sg.PopupError(f"Error while doing tasks for the customer: {row['Customer']} with customer number: {row['Customer Number']}\nError: {inst}", title='Error', icon=r'CCP.ico')
                     try: 
-                        save_output(df_completed, "Origin_Automation_Succes", False)
-                        save_output(df_error, "Origin_Automation_Error", True)
+                        save_output(df_succes, 'Return_Rental_Succes', False)
+                        save_output(df_failed, 'Return_Rental_Error', True)
                     except Exception as ex:
                         sg.PopupError(f"Error while saving the output to an excel. Exception: {ex}", icon=r'CCP.ico')
 
@@ -694,7 +735,7 @@ def main():
 
                     # Application has finished
                     output = str(round((end - start) / 60)) + ' minutes and ' + str(round((((end - start) / 60.00) - ((end - start) // 60.0)) * 60, 2)) + " seconds."
-                    sg.popup(f'Application has finished succesfully in {output}\nThe application handled {completed} return/rentals.\nThe program ran {len(df_completed)}/{completed} succesfull.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
+                    sg.popup(f'Application has finished succesfully in {output}\nThe application handled {completed} return/rentals.\nThe program ran {len(df_succes)}/{completed} succesfull.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
 
                     main_window['-telenetfile-'].update('')
                     main_window['-btnstores-'].update(disabled=False)
@@ -715,7 +756,7 @@ def main_console():
     df_succes, df_failed = search_customers(df, ERROR_COUNTER)
     
     # Empty assignment key error:
-    #search_customer(32760435, ERROR_COUNTER, [972352214451, 964385572542], df, df_succes, df_failed)
+    #search_customer(32760435, ERROR_COUNTER, [972352214451, 964385572542], df, df_succes, df_failed, True)
 
     driver.quit()
 
@@ -726,4 +767,4 @@ def main_console():
 
 
 if __name__ == '__main__':
-    main_console()
+    main()
