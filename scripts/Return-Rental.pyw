@@ -481,6 +481,7 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                             break
                     except TimeoutException as inst:
                         print("An exception occured while searching for the serial number: ", inst, "Type of exception: ", type(inst).__name__)
+                        df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet ingeven'], index=['Reason'])])
                 if succes_flag:
                     break
             tabs = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.XPATH, "//iframe[contains(@name,'PegaGadget')]")))
@@ -499,7 +500,7 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
             rows.drop('Delivery Order', axis='columns')
 
             for index, row in rows.iterrows():
-                df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['White screen fail'], index=['Reason'])])
+                df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Wit scherm fail'], index=['Reason'])])
             close_current_tab()
             continue
         except  TimeoutException as _:
@@ -509,7 +510,7 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
     
     # If there are leftover serial numbers then put them in the failed DataFrame
     for serial_number in serial_numbers:
-        df_failed.loc[len(df_failed)] = [str(cust), str(cust_number), str(serial_number), None, store, 'Serial number not found inside the interactions']
+        df_failed.loc[len(df_failed)] = [str(cust), str(cust_number), str(serial_number), None, store, 'Serinummer niet gevonden binnen de interacties']
 
     wrap_up()
 
