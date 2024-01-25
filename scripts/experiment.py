@@ -1,14 +1,11 @@
-ERROR_COUNTER = 0
-ERROR_SMALL = 0
+import pandas as pd
 
-for i in range(10):
-    try:
-        try:
-            if i % 2 == 0:
-                raise Exception
-        except Exception as inst:
-            ERROR_SMALL += 1
-            print(f"De kleine error counter staat op: {ERROR_SMALL}")    
-    except Exception as inst:
-        ERROR_COUNTER += 1
-        print(f"De grote error counter staat op: {ERROR_COUNTER}")
+df = pd.DataFrame(columns=['big', 'small'],
+                  data=[[45, 30], [200, 100], [1.5, 1], [30, 20],
+                        [250, 150], [1.5, 0.8], [320, 250],
+                        [1, 0.8], [0.3, 0.2]])
+print(df['big'].tolist())
+if 45.0 in df['big'].tolist():
+    print('yes')
+else:
+    print('no')

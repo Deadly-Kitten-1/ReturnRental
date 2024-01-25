@@ -14,6 +14,7 @@ from sys                                     import exit
 import PySimpleGUI  as sg 
 import pandas       as pd
 
+import traceback
 import datetime
 import shutil
 import json
@@ -21,12 +22,12 @@ import time
 import os
 
 #Constants
-with open(r'config.json') as config_file:
-#with open(r'C:\Users\Kassa\Documents\Scripts\ReturnRental\scripts\config.json') as config_file:
+#with open(r'config.json') as config_file:
+with open(r'C:\Users\Kassa\Documents\Scripts\ReturnRental\scripts\config.json') as config_file:
     CONFIG = json.load(config_file)
 
-WEBDRIVER_LOCATION = r'chromedriver.exe'
-#WEBDRIVER_LOCATION = r'C:\Users\Kassa\Documents\Scripts\ReturnRental\scripts\chromedriver.exe'
+#WEBDRIVER_LOCATION = r'chromedriver.exe'
+WEBDRIVER_LOCATION = r'C:\Users\Kassa\Documents\Scripts\ReturnRental\scripts\chromedriver.exe'
 DEBUG_PORT = CONFIG['chrome_port']
 ERROR_COUNTER = 0
 
@@ -116,7 +117,7 @@ def make_shop_files(dir):
 
     for index, df in enumerate(dfs):
         # Select only the necessary columns
-        df = df[['Klant','Klant nummer', 'Store']]
+        df = df[['Klant','Klant nummer', 'Store', 'Serienummer']]
 
         # Remove NaN values
         df = df.dropna()
@@ -126,7 +127,7 @@ def make_shop_files(dir):
         df['Klant nummer'] = df['Klant nummer'].str.extract('(\d+)')
 
         # Remove duplicate klant nummers
-        df = df.drop_duplicates(subset=['Klant nummer'])
+        df = df.drop_duplicates(subset=['Serienummer'])
 
         # Reset the index
         df = df.reset_index(drop=True)
@@ -381,10 +382,14 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
             for index, serial_number in enumerate(serial_numbers):
                 try:
                     device_indetifier = WebDriverWait(table, 5).until(EC.presence_of_element_located((By.XPATH, f".//div[@id='rowDetail{hardware.get_attribute('id')}']")))
-                    WebDriverWait(device_indetifier, 2).until(EC.presence_of_element_located((By.XPATH, f"//span[contains(text(),'{str(serial_number)}')]")))
+
+                    test = WebDriverWait(device_indetifier, 2).until(EC.presence_of_element_located((By.XPATH, f".//span[contains(text(),'{str(serial_number).strip()}')]")))
+                    
                     to_change += 1
 
-                    df.loc[len(df)] = [cust, cust_number, order, serial_number, interaction, store]
+                    print(f"Found {serial_number} in the table: {test.text}")
+
+                    df.loc[len(df)] = [cust, cust_number, order, str(serial_number).strip(), interaction, store]
                     del serial_numbers[index]
                 except Exception as _:
                     pass
@@ -404,7 +409,7 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
         time.sleep(10)
         btn_confirm = WebDriverWait(driver, 60).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@name,'ConfirmEditSC_pyWorkPage') and text()='Yes']")))
         btn_confirm.click()
-        
+
         WebDriverWait(driver, 60).until(EC.alert_is_present())
         alert = driver.switch_to.alert
 
@@ -413,6 +418,7 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
             rows = df.loc[df['Interaction'] == interaction]
             for index, row in rows.iterrows():
                 df_failed.loc[len(df_failed)] = pd.concat([row.drop('Delivery Order'), pd.Series(['Empty assignment key error'], index=['Reason'])])
+                df = df.drop([index])
             alert.accept()
             continue
         
@@ -437,55 +443,77 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
             table = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//*[contains(@pl_prop_class,'Telenet-FW-ADTFW-Work-OrderMgmt-ReturnDevice')]")))
 
             all_delivery_orders = WebDriverWait(table, 60).until(EC.presence_of_all_elements_located((By.XPATH, ".//tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
+            
+            print(f"There are {len(all_delivery_orders)} orders")
 
             # Check for each row the delivery order to be the same as the order in the all_delivery_orders
-            succes_flag = False
             for index, row in df.iterrows():
+                print(row['Serial Number'])
+                print(row['Delivery Order'])
+                print(index) 
                 for delivery_order in all_delivery_orders:
-                    try:                        
+                    try:                       
                         id = delivery_order.get_attribute('id')
+                        print(id)
 
-                        WebDriverWait(delivery_order, 0.5).until(EC.presence_of_element_located((By.XPATH, f"//span[text()='{row['Delivery Order']}']")))
+                        WebDriverWait(delivery_order, 0.5).until(EC.visibility_of_element_located((By.XPATH, f"//span[text()='{row['Delivery Order']}']")))
+                        print('found the order number row')
                         input_serial_number = WebDriverWait(delivery_order, 0.5).until(EC.presence_of_element_located((By.XPATH, f".//input[@name='{delivery_order.get_attribute('id')}$pAgentEnteredReturnDeviceSerialNumber']")))
+                        print('found the input box for the serial number')
                         input_serial_number.send_keys(row['Serial Number'])
+                        print('Can edit the text')
                         input_serial_number.send_keys(Keys.ENTER)
+                        print('Can edit the text again')
+                    except ElementNotInteractableException as inst:
+                        print("An exception occured while searching for the serial number: ", inst, "Type of exception: ", type(inst).__name__)
+                        if row['Serial Number'] not in df_failed['Serial Number'].tolist():
+                            df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet ingeven'], index=['Reason'])])
+                        break
+                    except TimeoutException as inst:
+                        #print("An exception occured while searching for the serial number: ", inst, "Type of exception: ", type(inst).__name__)
+                        print("Should skip to the next delivery order")
+                        continue
                         
-                        try:
-                            time.sleep(10)
+                    try:
+                        time.sleep(10)
 
-                            send_serial_number = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, f"//tr[@id='{id}']//i/..")))
-                            send_serial_number.click()
+                        send_serial_number = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, f"//tr[@id='{id}']//i/..")))
+                        send_serial_number.click()
 
-                            time.sleep(10)
+                        time.sleep(10)
 
-                            parent = WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.XPATH, "//div[@data-node-id='SubmitReturnDelivery' and @node_name='SubmitReturnDelivery']")))
-                            proceed_btn = WebDriverWait(parent, 10).until(EC.element_to_be_clickable((By.XPATH, ".//button[text()='Proceed']")))
-                            proceed_btn.click()
+                        parent = WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.XPATH, "//div[@data-node-id='SubmitReturnDelivery' and @node_name='SubmitReturnDelivery']")))
+                        proceed_btn = WebDriverWait(parent, 10).until(EC.element_to_be_clickable((By.XPATH, ".//button[text()='Proceed']")))
+                        proceed_btn.click()
 
-                            time.sleep(10)
+                        time.sleep(10)
 
-                            df_succes.loc[len(df_succes)] = row.drop('Delivery Order')
-                            succes_flag = True
+                        try: 
+                            WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'Validation of serial Number unsuccessfull')]")))
+                            if row['Serial Number'] not in df_failed['Serial Number'].tolist():
+                                df_failed.loc[len(df_failed)] = pd.concat([row.drop('Delivery Order'), pd.Series(["Validatie van het serienummer was gefaald"], index=['Reason'])])
+                        except TimeoutException as _:
+                            if row['Serial Number'] not in df_succes['Serial Number'].tolist():
+                                df_succes.loc[len(df_succes)] = row.drop('Delivery Order')
                             print("Added a new line to the succes table")
 
-                            time.sleep(10)
-                            break
+                        time.sleep(10)
+                        break
 
-                        except Exception as inst:
-                            print("An exception occured while inputting the serial number: ", inst, "Type of exception: ", type(inst).__name__)
-                            rows = df.loc[df['Interaction'] == interaction]
-                            rows.drop('Delivery Order', axis='columns')
+                    except Exception as inst:
+                        print("An exception occured while inputting the serial number: ", inst, "Type of exception: ", type(inst).__name__)
+                        rows = df.loc[df['Interaction'] == interaction]
+                        rows.drop('Delivery Order', axis='columns')
 
-                            for index, row in rows.iterrows():
-                                df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(["Error while inputting the serial number"], index=['Reason'])])
-                            break
-                    except TimeoutException as inst:
-                        print("An exception occured while searching for the serial number: ", inst, "Type of exception: ", type(inst).__name__)
-                        df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet ingeven'], index=['Reason'])])
-                if succes_flag:
-                    break
+                        for index, row in rows.iterrows():
+                            if row['Serial Number'] not in df_failed['Serial Number'].tolist():
+                                df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(["Error tijdens het invullen van het serienummer"], index=['Reason'])])
+                        break
+
+            time.sleep(3)    
+    
+            driver.switch_to.default_content()
             tabs = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.XPATH, "//iframe[contains(@name,'PegaGadget')]")))
-            print(f"De lengte van de tabbladen is: {len(tabs)}")
             
             if len(tabs) > 2:
                 print("Closing tab if there are more than 2 tabs open")
@@ -493,24 +521,22 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
 
             if len(serial_numbers) == 0:
                 break
-        except ElementNotInteractableException as _:
+        except Exception as inst:
+            print(traceback.format_exc())
             print("You were the victim of the white screen bandit")
             
             rows = df.loc[df['Interaction'] == interaction]
             rows.drop('Delivery Order', axis='columns')
 
             for index, row in rows.iterrows():
-                df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Wit scherm fail'], index=['Reason'])])
-            close_current_tab()
-            continue
-        except  TimeoutException as _:
-            print("Close tab after a timeoutexception")
+                if row['Serial Number'] not in df_failed['Serial Number'].tolist():
+                    df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Wit scherm fail'], index=['Reason'])])
             close_current_tab()
             continue
     
     # If there are leftover serial numbers then put them in the failed DataFrame
     for serial_number in serial_numbers:
-        df_failed.loc[len(df_failed)] = [str(cust), str(cust_number), str(serial_number), None, store, 'Serinummer niet gevonden binnen de interacties']
+        df_failed.loc[len(df_failed)] = [str(cust), str(cust_number), str(serial_number), None, store, 'Serienummer niet gevonden binnen de interacties']
 
     wrap_up()
 
@@ -671,6 +697,7 @@ def main():
                     # Making the list of customers
                     df = read_excel_file(telenet_file)
 
+                    pd.options.display.float_format = '{:.0f}'.format
                     save_output(df, 'Return_Rental_Workingfile', False)
                     
                     main_window['-PERCENTAGE-'].update(value='%0.2f procent voltooid.' % (0))
@@ -699,6 +726,7 @@ def main():
 
                             if event in (sg.WIN_CLOSED, 'Exit'):
                                 try:
+                                    pd.options.display.float_format = '{:.0f}'.format
                                     save_output(df_succes, "Return_Rental_Succes", False)
                                     save_output(df_failed, "Return_Rental_Error", True)
                                 except Exception as ex:
@@ -721,6 +749,7 @@ def main():
                             print("An exception occured: ", inst, "Type of exception: ", type(inst).__name__)
                             sg.PopupError(f"Error while doing tasks for the customer: {row['Customer']} with customer number: {row['Customer Number']}\nError: {inst}", title='Error', icon=r'CCP.ico')
                     try: 
+                        pd.options.display.float_format = '{:.0f}'.format
                         save_output(df_succes, 'Return_Rental_Succes', False)
                         save_output(df_failed, 'Return_Rental_Error', True)
                     except Exception as ex:
