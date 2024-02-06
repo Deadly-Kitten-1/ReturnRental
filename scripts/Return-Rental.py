@@ -64,7 +64,6 @@ def start_task(ERROR_COUNTER):
         btn_retailtelenet.click()
         
     except Exception as e:
-        print("An exception occured: ", e, "Type of exception: ", type(e).__name__)
         ERROR_COUNTER += 1
 
         if (ERROR_COUNTER >= 2):
@@ -155,7 +154,6 @@ def search_customers(df, ERROR_COUNTER):
 
     for index, row in df.iterrows():
         start_task(ERROR_COUNTER)
-        print(f"Going to work on cust num: {row['Customer Number']} with serial numbers: {row['Serial Numbers']}")
         df_succes, df_failed = search_customer(row, ERROR_COUNTER, df_working_data, df_succes, df_failed, True)
     
     return (df_succes, df_failed)
@@ -201,7 +199,6 @@ def search_customer(row, ERROR_COUNTER, df, df_succes, df_failed, starttask):
 
         return (df_succes, df_failed)
     except Exception as inst:
-        print("An exception occured: ", inst, "Type of exception: ", type(inst).__name__)
         ERROR_COUNTER += 1
 
         if (ERROR_COUNTER >= 2):
@@ -210,7 +207,6 @@ def search_customer(row, ERROR_COUNTER, df, df_succes, df_failed, starttask):
             
             time.sleep(5)
             try:
-                print("Close tab after exception")
                 close_current_tab()
             except TimeoutException as _:
                 pass
@@ -387,8 +383,6 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                     
                     to_change += 1
 
-                    print(f"Found {serial_number} in the table: {test.text}")
-
                     df.loc[len(df)] = [cust, cust_number, order, str(serial_number).strip(), interaction, store]
                     del serial_numbers[index]
                 except Exception as _:
@@ -398,7 +392,6 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                 break
 
         if to_change == 0:
-            print("Nothing found to change so close the tab")
             close_current_tab()
             continue
 
@@ -442,74 +435,64 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
             # Use the dataframe to get the order id and fill in the serial number
             table = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//*[contains(@pl_prop_class,'Telenet-FW-ADTFW-Work-OrderMgmt-ReturnDevice')]")))
 
-            all_delivery_orders = WebDriverWait(table, 60).until(EC.presence_of_all_elements_located((By.XPATH, ".//tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
-            
-            print(f"There are {len(all_delivery_orders)} orders")
-
-            # Check for each row the delivery order to be the same as the order in the all_delivery_orders
+            # Check for each row the delivery order to be the same as the order on screen
             for index, row in df.iterrows():
                 print(row['Serial Number'])
-                print(row['Delivery Order'])
-                print(index) 
-                for delivery_order in all_delivery_orders:
-                    try:                       
-                        id = delivery_order.get_attribute('id')
-                        print(id)
 
-                        WebDriverWait(delivery_order, 0.5).until(EC.visibility_of_element_located((By.XPATH, f"//span[text()='{row['Delivery Order']}']")))
-                        print('found the order number row')
-                        input_serial_number = WebDriverWait(delivery_order, 0.5).until(EC.presence_of_element_located((By.XPATH, f".//input[@name='{delivery_order.get_attribute('id')}$pAgentEnteredReturnDeviceSerialNumber']")))
-                        print('found the input box for the serial number')
-                        input_serial_number.send_keys(row['Serial Number'])
-                        print('Can edit the text')
-                        input_serial_number.send_keys(Keys.ENTER)
-                        print('Can edit the text again')
-                    except ElementNotInteractableException as inst:
-                        print("An exception occured while searching for the serial number: ", inst, "Type of exception: ", type(inst).__name__)
-                        if row['Serial Number'] not in df_failed['Serial Number'].tolist():
-                            df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet ingeven'], index=['Reason'])])
-                        break
-                    except TimeoutException as inst:
-                        #print("An exception occured while searching for the serial number: ", inst, "Type of exception: ", type(inst).__name__)
-                        print("Should skip to the next delivery order")
-                        continue
-                        
-                    try:
-                        time.sleep(10)
+                try:
 
-                        send_serial_number = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, f"//tr[@id='{id}']//i/..")))
-                        send_serial_number.click()
+                    order_nr = WebDriverWait(driver, 0.5).until(EC.visibility_of_element_located((By.XPATH, f"//tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]//span[text()='{row['Delivery Order']}']")))
+                    delivery_order = WebDriverWait(order_nr, 0.5).until(EC.visibility_of_element_located((By.XPATH, f"./ancestor::tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
+                    id = delivery_order.get_attribute('id')
 
-                        time.sleep(10)
+                    input_serial_number = WebDriverWait(delivery_order, 0.5).until(EC.presence_of_element_located((By.XPATH, f".//input[@name='{delivery_order.get_attribute('id')}$pAgentEnteredReturnDeviceSerialNumber']")))
+                    input_serial_number.send_keys(row['Serial Number'])
+                    input_serial_number.send_keys(Keys.ENTER)
+                except ElementNotInteractableException as inst:
+                    if row['Serial Number'] not in df_failed['Serial Number'].tolist() and row['Serial Number'] not in df_succes['Serial Number'].tolist():
+                        df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet ingeven'], index=['Reason'])])
+                    continue
+                except TimeoutException as inst:
+                    print(traceback.format_exc())
+                    if row['Serial Number'] not in df_failed['Serial Number'].tolist() and row['Serial Number'] not in df_succes['Serial Number'].tolist():
+                        df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet vinden'], index=['Reason'])])
+                    continue
+                    
+                try:
+                    time.sleep(10)
 
-                        parent = WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.XPATH, "//div[@data-node-id='SubmitReturnDelivery' and @node_name='SubmitReturnDelivery']")))
-                        proceed_btn = WebDriverWait(parent, 10).until(EC.element_to_be_clickable((By.XPATH, ".//button[text()='Proceed']")))
-                        proceed_btn.click()
+                    send_serial_number = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, f"//tr[@id='{id}']//i/..")))
+                    send_serial_number.click()
 
-                        time.sleep(10)
+                    time.sleep(10)
 
-                        try: 
-                            WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'Validation of serial Number unsuccessfull')]")))
-                            if row['Serial Number'] not in df_failed['Serial Number'].tolist():
-                                df_failed.loc[len(df_failed)] = pd.concat([row.drop('Delivery Order'), pd.Series(["Validatie van het serienummer was gefaald"], index=['Reason'])])
-                        except TimeoutException as _:
-                            if row['Serial Number'] not in df_succes['Serial Number'].tolist():
-                                df_succes.loc[len(df_succes)] = row.drop('Delivery Order')
-                            print("Added a new line to the succes table")
+                    parent = WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.XPATH, "//div[@data-node-id='SubmitReturnDelivery' and @node_name='SubmitReturnDelivery']")))
+                    proceed_btn = WebDriverWait(parent, 10).until(EC.element_to_be_clickable((By.XPATH, ".//button[text()='Proceed']")))
+                    proceed_btn.click()
 
-                        time.sleep(10)
-                        break
+                    time.sleep(10)
 
-                    except Exception as inst:
-                        print("An exception occured while inputting the serial number: ", inst, "Type of exception: ", type(inst).__name__)
-                        rows = df.loc[df['Interaction'] == interaction]
-                        rows.drop('Delivery Order', axis='columns')
+                    try: 
+                        WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'Validation of serial Number unsuccessfull')]")))
+                        if row['Serial Number'] not in df_failed['Serial Number'].tolist() and row['Serial Number'] not in df_succes['Serial Number'].tolist():
+                            df_failed.loc[len(df_failed)] = pd.concat([row.drop('Delivery Order'), pd.Series(["Validatie van het serienummer was gefaald"], index=['Reason'])])
+                    except TimeoutException as _:
+                        if row['Serial Number'] not in df_failed['Serial Number'].tolist() and row['Serial Number'] not in df_succes['Serial Number'].tolist():
+                            df_succes.loc[len(df_succes)] = row.drop('Delivery Order')
+                        print("Added a new line to the succes table")
 
-                        for index, row in rows.iterrows():
-                            if row['Serial Number'] not in df_failed['Serial Number'].tolist():
-                                df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(["Error tijdens het invullen van het serienummer"], index=['Reason'])])
-                        break
+                    time.sleep(10)
 
+                except Exception as inst:
+                    print(traceback.format_exc())
+                    rows = df.loc[df['Interaction'] == interaction]
+                    rows.drop('Delivery Order', axis='columns')
+
+                    for index, rij in rows.iterrows():
+                        if rij['Serial Number'] not in df_failed['Serial Number'].tolist() and rij['Serial Number'] not in df_succes['Serial Number'].tolist():
+                            df_failed.loc[len(df_failed)] = pd.concat([rij, pd.Series(["Error tijdens het invullen van het serienummer"], index=['Reason'])])
+                    continue
+            
             time.sleep(3)    
     
             driver.switch_to.default_content()
@@ -518,18 +501,14 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
             if len(tabs) > 2:
                 print("Closing tab if there are more than 2 tabs open")
                 close_current_tab()
-
-            if len(serial_numbers) == 0:
-                break
         except Exception as inst:
             print(traceback.format_exc())
-            print("You were the victim of the white screen bandit")
             
             rows = df.loc[df['Interaction'] == interaction]
             rows.drop('Delivery Order', axis='columns')
 
             for index, row in rows.iterrows():
-                if row['Serial Number'] not in df_failed['Serial Number'].tolist():
+                if row['Serial Number'] not in df_failed['Serial Number'].tolist() and row['Serial Number'] not in df_succes['Serial Number'].tolist():
                     df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Wit scherm fail'], index=['Reason'])])
             close_current_tab()
             continue
@@ -537,15 +516,22 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
     # If there are leftover serial numbers then put them in the failed DataFrame
     for serial_number in serial_numbers:
         df_failed.loc[len(df_failed)] = [str(cust), str(cust_number), str(serial_number), None, store, 'Serienummer niet gevonden binnen de interacties']
+    
+    df = df.iloc[0:0]
+    print(f"Toon de grote van de pandas dataframe: {len(df)}")
 
     wrap_up()
 
     return (df_succes, df_failed)
 
 def wrap_up():
-    # Wrap up the task
-
     time.sleep(10)
+
+    driver.switch_to.default_content()
+    frames = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.TAG_NAME, "iframe")))
+    driver.switch_to.frame(frames[-1])
+    
+    time.sleep(5)
 
     # Wrap up the task
     btn_wrapup = WebDriverWait(driver, 60).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@name,'CPMInteractionDriver') and contains(@title,'Wrap Up')]")))
@@ -734,7 +720,7 @@ def main():
 
                                 end = time.time()
                                 output = str(round((end - start) / 60)) + ' minutes and ' + str(round((((end - start) / 60.00) - ((end - start) // 60.0)) * 60, 2)) + " seconds."
-                                sg.popup(f'Exiting program early after {output}\nThe application handled {completed} customers.\nThe program ran {len(df_succes)}/{completed} succesfull.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
+                                sg.popup(f'Exiting program early after {output}\nThe application handled {completed} customers.\nThe program ran {len(df_succes)} serial numbers succesfull and {len(df_failed)} serial numbers failed.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
                                 main_window.close()
                                 driver.quit()
                                 exit(0)
@@ -746,7 +732,6 @@ def main():
                             main_window['-PBAR-'].update(current_count=int((completed / len(df)) * 100))
 
                         except Exception as inst:
-                            print("An exception occured: ", inst, "Type of exception: ", type(inst).__name__)
                             sg.PopupError(f"Error while doing tasks for the customer: {row['Customer']} with customer number: {row['Customer Number']}\nError: {inst}", title='Error', icon=r'CCP.ico')
                     try: 
                         pd.options.display.float_format = '{:.0f}'.format
@@ -759,7 +744,7 @@ def main():
 
                     # Application has finished
                     output = str(round((end - start) / 60)) + ' minutes and ' + str(round((((end - start) / 60.00) - ((end - start) // 60.0)) * 60, 2)) + " seconds."
-                    sg.popup(f'Application has finished succesfully in {output}\nThe application handled {completed} return/rentals.\nThe program ran {len(df_succes)}/{completed} succesfull.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
+                    sg.popup(f'Application has finished succesfully in {output}\nThe application handled {completed} customers.\nThe program ran {len(df_succes)} serial numbers succesfull and {len(df_failed)} serial numbers failed.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
 
                     main_window['-telenetfile-'].update('')
                     main_window['-btnstores-'].update(disabled=False)
