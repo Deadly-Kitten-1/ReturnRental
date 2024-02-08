@@ -379,7 +379,7 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                 try:
                     device_indetifier = WebDriverWait(table, 5).until(EC.presence_of_element_located((By.XPATH, f".//div[@id='rowDetail{hardware.get_attribute('id')}']")))
 
-                    WebDriverWait(device_indetifier, 2).until(EC.presence_of_element_located((By.XPATH, f".//span[contains(text(),'{str(serial_number).strip()}')]")))
+                    test = WebDriverWait(device_indetifier, 2).until(EC.presence_of_element_located((By.XPATH, f".//span[contains(text(),'{str(serial_number).strip()}')]")))
                     
                     print(f"Found serial number ({serial_number}) in the table")
                     
@@ -432,9 +432,15 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
 
             time.sleep(5)
 
+            actions = ActionChains(driver)
+
+            # Use the dataframe to get the order id and fill in the serial number
+            table = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//*[contains(@pl_prop_class,'Telenet-FW-ADTFW-Work-OrderMgmt-ReturnDevice')]")))
+
             # Check for each row the delivery order to be the same as the order on screen
             for index, row in df.iterrows():
                 try:
+
                     order_nr = WebDriverWait(driver, 0.5).until(EC.visibility_of_element_located((By.XPATH, f"//tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]//span[text()='{row['Delivery Order']}']")))
                     delivery_order = WebDriverWait(order_nr, 0.5).until(EC.visibility_of_element_located((By.XPATH, f"./ancestor::tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
                     id = delivery_order.get_attribute('id')
