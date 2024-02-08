@@ -22,12 +22,12 @@ import time
 import os
 
 #Constants
-#with open(r'config.json') as config_file:
-with open(r'C:\Users\Kassa\Documents\Scripts\ReturnRental\scripts\config.json') as config_file:
+with open(r'config.json') as config_file:
+#with open(r'C:\Users\Kassa\Documents\Scripts\ReturnRental\scripts\config.json') as config_file:
     CONFIG = json.load(config_file)
 
-#WEBDRIVER_LOCATION = r'chromedriver.exe'
-WEBDRIVER_LOCATION = r'C:\Users\Kassa\Documents\Scripts\ReturnRental\scripts\chromedriver.exe'
+WEBDRIVER_LOCATION = r'chromedriver.exe'
+#WEBDRIVER_LOCATION = r'C:\Users\Kassa\Documents\Scripts\ReturnRental\scripts\chromedriver.exe'
 DEBUG_PORT = CONFIG['chrome_port']
 ERROR_COUNTER = 0
 
@@ -234,8 +234,6 @@ def close_current_tab():
   
 def get_tasks():
 
-    actions = ActionChains(driver)
-
     # Click on the Tasks button
     btn_tasks = None
     btns = WebDriverWait(driver, 30).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'h3')))
@@ -295,7 +293,6 @@ def get_tasks():
 
     time.sleep(3)
 
-    #chks = WebDriverWait(driver, 30).until(EC.presence_of_all_elements_located((By.XPATH, "//tbody/tr/td/label[contains(text(),'Pending-Completion') or contains(text(),'Open')]")))
     chks = driver.find_elements(By.XPATH, "//tbody/tr/td/label[contains(text(),'Pending-Completion') or contains(text(),'Open')]")
     if len(chks) == 0:
         return []
@@ -379,9 +376,7 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                 try:
                     device_indetifier = WebDriverWait(table, 5).until(EC.presence_of_element_located((By.XPATH, f".//div[@id='rowDetail{hardware.get_attribute('id')}']")))
 
-                    test = WebDriverWait(device_indetifier, 2).until(EC.presence_of_element_located((By.XPATH, f".//span[contains(text(),'{str(serial_number).strip()}')]")))
-                    
-                    print(f"Found serial number ({serial_number}) in the table")
+                    WebDriverWait(device_indetifier, 2).until(EC.presence_of_element_located((By.XPATH, f".//span[contains(text(),'{str(serial_number).strip()}')]")))
                     
                     to_change += 1
 
@@ -432,15 +427,9 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
 
             time.sleep(5)
 
-            actions = ActionChains(driver)
-
-            # Use the dataframe to get the order id and fill in the serial number
-            table = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//*[contains(@pl_prop_class,'Telenet-FW-ADTFW-Work-OrderMgmt-ReturnDevice')]")))
-
             # Check for each row the delivery order to be the same as the order on screen
             for index, row in df.iterrows():
                 try:
-
                     order_nr = WebDriverWait(driver, 0.5).until(EC.visibility_of_element_located((By.XPATH, f"//tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]//span[text()='{row['Delivery Order']}']")))
                     delivery_order = WebDriverWait(order_nr, 0.5).until(EC.visibility_of_element_located((By.XPATH, f"./ancestor::tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
                     id = delivery_order.get_attribute('id')
@@ -450,11 +439,11 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                     input_serial_number.send_keys(Keys.ENTER)
                 except ElementNotInteractableException as inst:
                     if row['Serial Number'] not in df_failed['Serial Number'].tolist() and row['Serial Number'] not in df_succes['Serial Number'].tolist():
-                        df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet ingeven'], index=['Reason'])])
+                        df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet ingeven in interactie'], index=['Reason'])])
                     continue
                 except TimeoutException as inst:
                     if row['Serial Number'] not in df_failed['Serial Number'].tolist() and row['Serial Number'] not in df_succes['Serial Number'].tolist():
-                        df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet vinden'], index=['Reason'])])
+                        df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet vinden in interactie (Wit scherm fail)'], index=['Reason'])])
                     continue
                     
                 try:
@@ -489,24 +478,28 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                         if rij['Serial Number'] not in df_failed['Serial Number'].tolist() and rij['Serial Number'] not in df_succes['Serial Number'].tolist():
                             df_failed.loc[len(df_failed)] = pd.concat([rij, pd.Series(["Error tijdens het invullen van het serienummer"], index=['Reason'])])
                     continue
-                
+            
             time.sleep(3)    
-    
+
             driver.switch_to.default_content()
             tabs = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.XPATH, "//iframe[contains(@name,'PegaGadget')]")))
-            
-            if len(tabs) > 2:
+            tabbladen = []
+            for tab in tabs:
+                if 'PegaGadget0' not in tab.get_attribute('name'):
+                    tabbladen.append(tab.get_attribute('name'))
+
+            if len(tabbladen) > 1:
                 close_current_tab()
-        except Exception as inst:            
+        except Exception as inst:
             rows = df.loc[df['Interaction'] == interaction]
             rows.drop('Delivery Order', axis='columns')
 
             for index, row in rows.iterrows():
                 if row['Serial Number'] not in df_failed['Serial Number'].tolist() and row['Serial Number'] not in df_succes['Serial Number'].tolist():
-                    df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Wit scherm fail'], index=['Reason'])])
+                    df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Onbekende fout'], index=['Reason'])])
             close_current_tab()
             continue
-    
+
     # If there are leftover serial numbers then put them in the failed DataFrame
     for serial_number in serial_numbers:
         df_failed.loc[len(df_failed)] = [str(cust), str(cust_number), str(serial_number), None, store, 'Serienummer niet gevonden binnen de interacties']
