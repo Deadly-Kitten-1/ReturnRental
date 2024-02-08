@@ -381,6 +381,8 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
 
                     WebDriverWait(device_indetifier, 2).until(EC.presence_of_element_located((By.XPATH, f".//span[contains(text(),'{str(serial_number).strip()}')]")))
                     
+                    print(f"Found serial number ({serial_number}) in the table")
+                    
                     to_change += 1
 
                     df.loc[len(df)] = [cust, cust_number, order, str(serial_number).strip(), interaction, store]
@@ -432,8 +434,6 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
 
             # Check for each row the delivery order to be the same as the order on screen
             for index, row in df.iterrows():
-                print(row['Serial Number'])
-
                 try:
                     order_nr = WebDriverWait(driver, 0.5).until(EC.visibility_of_element_located((By.XPATH, f"//tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]//span[text()='{row['Delivery Order']}']")))
                     delivery_order = WebDriverWait(order_nr, 0.5).until(EC.visibility_of_element_located((By.XPATH, f"./ancestor::tr[contains(@id,'$PpyWorkPage$pReturnDeviceDetails')]")))
@@ -447,7 +447,6 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                         df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet ingeven'], index=['Reason'])])
                     continue
                 except TimeoutException as inst:
-                    print(traceback.format_exc())
                     if row['Serial Number'] not in df_failed['Serial Number'].tolist() and row['Serial Number'] not in df_succes['Serial Number'].tolist():
                         df_failed.loc[len(df_failed)] = pd.concat([row, pd.Series(['Kon serienummer niet vinden'], index=['Reason'])])
                     continue
@@ -473,12 +472,10 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                     except TimeoutException as _:
                         if row['Serial Number'] not in df_failed['Serial Number'].tolist() and row['Serial Number'] not in df_succes['Serial Number'].tolist():
                             df_succes.loc[len(df_succes)] = row.drop('Delivery Order')
-                        print("Added a new line to the succes table")
 
                     time.sleep(10)
 
                 except Exception as inst:
-                    print(traceback.format_exc())
                     rows = df.loc[df['Interaction'] == interaction]
                     rows.drop('Delivery Order', axis='columns')
 
@@ -486,18 +483,15 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
                         if rij['Serial Number'] not in df_failed['Serial Number'].tolist() and rij['Serial Number'] not in df_succes['Serial Number'].tolist():
                             df_failed.loc[len(df_failed)] = pd.concat([rij, pd.Series(["Error tijdens het invullen van het serienummer"], index=['Reason'])])
                     continue
-            
+                
             time.sleep(3)    
     
             driver.switch_to.default_content()
             tabs = WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.XPATH, "//iframe[contains(@name,'PegaGadget')]")))
             
             if len(tabs) > 2:
-                print("Closing tab if there are more than 2 tabs open")
                 close_current_tab()
-        except Exception as inst:
-            print(traceback.format_exc())
-            
+        except Exception as inst:            
             rows = df.loc[df['Interaction'] == interaction]
             rows.drop('Delivery Order', axis='columns')
 
@@ -512,7 +506,6 @@ def search_interactions(row, interactions, df, df_succes, df_failed):
         df_failed.loc[len(df_failed)] = [str(cust), str(cust_number), str(serial_number), None, store, 'Serienummer niet gevonden binnen de interacties']
     
     df = df.iloc[0:0]
-    print(f"Toon de grote van de pandas dataframe: {len(df)}")
 
     wrap_up()
 
@@ -714,7 +707,7 @@ def main():
 
                                 end = time.time()
                                 output = str(round((end - start) / 60)) + ' minutes and ' + str(round((((end - start) / 60.00) - ((end - start) // 60.0)) * 60, 2)) + " seconds."
-                                sg.popup(f'Exiting program early after {output}\nThe application handled {completed} customers.\nThe program ran {len(df_succes)} serial numbers succesfull and {len(df_failed)} serial numbers failed.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
+                                sg.popup(f'Exiting program early after {output}\nThe application handled {completed} customers.\nThe program ran {len(df_succes)} serial numbers succesfull and {len(df_failed)} serial numbers either failed or were not found.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
                                 main_window.close()
                                 driver.quit()
                                 exit(0)
@@ -738,7 +731,7 @@ def main():
 
                     # Application has finished
                     output = str(round((end - start) / 60)) + ' minutes and ' + str(round((((end - start) / 60.00) - ((end - start) // 60.0)) * 60, 2)) + " seconds."
-                    sg.popup(f'Application has finished succesfully in {output}\nThe application handled {completed} customers.\nThe program ran {len(df_succes)} serial numbers succesfull and {len(df_failed)} serial numbers failed.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
+                    sg.popup(f'Application has finished succesfully in {output}\nThe application handled {completed} customers.\nThe program ran {len(df_succes)} serial numbers succesfull and {len(df_failed)} serial numbers either failed or were not found.\nOutput is located at {CONFIG["base_path"]}.', title='Finished', icon=r'CCP.ico')
 
                     main_window['-telenetfile-'].update('')
                     main_window['-btnstores-'].update(disabled=False)
